@@ -1,3 +1,6 @@
 .vscode
 kafka-server
 .env
+*_data
+*_logs
+__pycache__
