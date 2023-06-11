@@ -1,62 +1,162 @@
-from flask import Flask, request
-from os import environ
+from flask import Flask, request, jsonify
+from flask_cors import CORS, cross_origin
+from kafka import KafkaProducer, KafkaConsumer
+from kafka.admin import KafkaAdminClient, NewTopic
 import psycopg2
 
 app = Flask(__name__)
 
+# CORS config
+cors = CORS(app)
+
+KAFKA_BOOTSTRAP_SERVERS='localhost:9092'
+KAFKA_TOPIC='product_orders'
+
+
+# function to establish postgres connection
 def create_connection():
     conn = psycopg2.connect(
         host='localhost',
         database='orders',
-        user=environ.get("POSTGRES_USERNAME"),
-        password=environ.get("POSTGRES_PASSWORD"),
+        user="pritishsamal",
+        password="Cymatics@7",
     )
     return conn
 
+# Dummy function to send email
+def send_email(order):
+    print(f"Email sent successfully to {order['customer']['email']}...")
+
+
+def publish_to_kafka_topic(topic, message):
+    producer = KafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
+    producer.send(topic, value=message.encode('utf-8'))
+    producer.flush()
+    producer.close()
+
+def consume_from_kafka_topic(topic):
+    consumer = KafkaConsumer(topic, bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS, group_id='kafka-streamer')
+    return consumer
+
+
+def save_order_to_postgres(order):
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    query = """
+        INSERT INTO orders (order_id, name, email, street, city, state, postal_code, product_name, quantity, order_date, priority)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+
+    values = (
+        order['order_id'],
+        order['customer']['name'],
+        order['customer']['email'],
+        order['customer']['address']['street'],
+        order['customer']['address']['city'],
+        order['customer']['address']['state'],
+        order['customer']['address']['postal_code'],
+        order['product_name'],
+        order['quantity'],
+        order['order_date'],
+        order['priority']
+    )
+
+    cursor.execute(query, values)
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
+
+def consume_and_send_emails():
+    consumer = consume_from_kafka_topic(KAFKA_TOPIC)
+
+    for message in consumer:
+        order = eval(message.value.decode('utf-8'))
+
+        # Check if priority is high
+        if order['priority'] == 'high':
+            send_email(order)
+
+        # Write message to respective city topic
+        city_topic = order['customer']['address']['city']
+        publish_to_kafka_topic(city_topic, message.value.decode('utf-8'))
+
+
+# Create Topic if not present
+def create_topic_if_not_exists(topic):
+    admin_client = KafkaAdminClient(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
+
+    topic_metadata = admin_client.list_topics()
+
+    if topic not in topic_metadata.topics:
+        topic = NewTopic(
+            name=topic,
+            num_partitions=3,
+            replication_factor=1
+        )
+
+        admin_client.create_topics([topic])
+
+
+
+# Dummy Home Endpoint
 @app.route("/")
 def hello():
     return "Hey there, welcome to the Kafka streamer!"
 
-
+# CREATE and READ Orders Endpoint
 @app.route("/orders", methods=["POST", "GET"])
+@cross_origin()
 def orders():
     if request.method == "GET":
         conn = create_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM orders;")
-        orders = cursor.fetchall()
-        return orders
+
+        query = "SELECT * FROM orders;"
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+        orders = []
+        for row in rows:
+            order = {
+                'order_id': row[0],
+                'name': row[1],
+                'email': row[2],
+                'street': row[3],
+                'city': row[4],
+                'state': row[5],
+                'postal_code': row[6],
+                'product_name': row[7],
+                'quantity': row[8],
+                'order_date': row[9].strftime('%Y-%m-%d'),
+                'priority': row[10]
+            }
+            orders.append(order)
+
+        cursor.close()
+        conn.close()
+
+        return jsonify(orders), 200
     
     if request.method == "POST":
-        data = request.get_json()
-        order_id = data.get('order_id')
-        customer_name = data.get('customer').get('name')
-        customer_email = data.get('customer').get('email')
-        customer_street = data.get('customer').get('address').get('street')
-        customer_city = data.get('customer').get('address').get('city')
-        customer_state = data.get('customer').get('address').get('state')
-        customer_postal_code = data.get('customer').get('address').get('postal_code')
-        product_name = data.get('product_name')
-        quantity = data.get('quantity')
-        order_date = data.get('order_date')
-        priority = data.get('priority')
+        order = request.get_json()
 
-        conn = create_connection()
-        cursor = conn.cursor()
+        # Publish order to Kafka topic
+        publish_to_kafka_topic(KAFKA_TOPIC, str(order))
 
-        query = """
-        INSERT INTO orders (order_id, customer_name, customer_email, customer_street, customer_city, 
-                            customer_state, customer_postal_code, product_name, quantity, order_date, priority)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-        """
+        # Save order to PostgreSQL
+        save_order_to_postgres(order)
 
-        cursor.execute(query, (order_id, customer_name, customer_email, customer_street, customer_city,
-                            customer_state, customer_postal_code, product_name, quantity, order_date, priority))
-
-        conn.commit()
-        conn.close()
-        return "Order added successfully!!"
+        return jsonify({'message': 'Order created successfully'}), 200
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    # Start consuming and sending emails in the background
+    import threading
+    email_thread = threading.Thread(target=consume_and_send_emails)
+    email_thread.start()
+
+    # Start the Flask web service
     app.run(debug=True)
