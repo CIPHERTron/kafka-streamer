@@ -68,14 +68,14 @@ To setup the project locally follow the steps below
 1. **Fork** and **clone** the project to your local system
 2. cd into the project and run
 
-```
+```shell
 docker-compose build --no-cache
 docker-compose up
 ```
 
 3. Then we have to create a table in postgre by running the following commands:
 
-```
+```shell
 docker ps -a
 
 <!-- copy the container id of db container -->
@@ -105,7 +105,7 @@ Then if you run `\dt`, you'll be able to see a table named **orders**
 
 4. Now, let's exec into kafka container & create a topic named `product_orders`. Run the following commands:
 
-```
+```shell
 docker ps -a
 
 <!-- copy the container id of kafka container -->
@@ -119,6 +119,12 @@ cd /opt/bitnami/kafka/bin
 <!-- The following command will list the topics -->
 
 ./kafka-topics.sh --list --bootstrap-server localhost:9092
+
+<!-- To run the consumer and see what events it is listening to in real-time, run -->
+kafka-console-consumer.sh --topic "product_orders" --from-beginning --bootstrap-server localhost:9092
+
+<!-- To run the producer for testing purposes and publish dummy orders, run -->
+kafka-console-producer.sh --topic "product_orders" --bootstrap-server localhost:9092
 ```
 
 5. Now we have the server, broker as well as the database up and running.
@@ -127,7 +133,7 @@ cd /opt/bitnami/kafka/bin
 
 6. If visit [127.0.0.1:5000](http://127.0.0.1:5000), you'll find the flask server running in this port. Now open postman and send a `POST` request to _127.0.0.1:5000/orders_ with the following payload:
 
-```
+```json
 {
   "order_id": 90123,
   "customer": {
