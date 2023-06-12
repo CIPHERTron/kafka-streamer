@@ -102,22 +102,6 @@ def consume_and_send_emails():
 def hello():
     return "Hey there, welcome to the Kafka streamer!"
 
-@app.route("/kafka-data", methods=["GET"])
-def get_data():
-    try:
-        consumer = consume_from_kafka_topic(KAFKA_TOPIC)
-        print(consumer)
-        
-        # print(type(consumer()))
-        # orders = []
-        # for message in consumer:
-            # order = eval(message.value.decode('utf-8'))
-            # print(json.loads(message.value))
-        return "/kafka-data endpoint hit"
-    except Exception as e:
-        print(e)
-        return "Some shit went wrong with kafka consumer"
-
 # CREATE and READ Orders Endpoint
 @app.route("/orders", methods=["POST", "GET"])
 def orders():
