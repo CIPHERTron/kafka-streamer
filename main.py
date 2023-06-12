@@ -6,7 +6,7 @@ import json
 
 app = Flask(__name__)
 
-KAFKA_BOOTSTRAP_SERVERS='localhost:9092'
+KAFKA_BOOTSTRAP_SERVERS='kafka'
 KAFKA_TOPIC='product_orders'
 
 
