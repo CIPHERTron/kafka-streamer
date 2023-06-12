@@ -1,13 +1,10 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS, cross_origin
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.admin import KafkaAdminClient, NewTopic
 import psycopg2
+import json
 
 app = Flask(__name__)
-
-# CORS config
-cors = CORS(app)
 
 KAFKA_BOOTSTRAP_SERVERS='localhost:9092'
 KAFKA_TOPIC='product_orders'
@@ -16,7 +13,7 @@ KAFKA_TOPIC='product_orders'
 # function to establish postgres connection
 def create_connection():
     conn = psycopg2.connect(
-        host='localhost',
+        host='db',
         database='orders',
         user="pritishsamal",
         password="Cymatics@7",
@@ -27,6 +24,20 @@ def create_connection():
 def send_email(order):
     print(f"Email sent successfully to {order['customer']['email']}...")
 
+# Create Topic if not present
+def create_topic_if_not_exists(topic):
+    admin_client = KafkaAdminClient(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
+
+    topic_metadata = admin_client.list_topics()
+
+    if topic not in topic_metadata.topics:
+        topic = NewTopic(
+            name=topic,
+            num_partitions=3,
+            replication_factor=1
+        )
+
+        admin_client.create_topics([topic])
 
 def publish_to_kafka_topic(topic, message):
     producer = KafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
@@ -37,7 +48,6 @@ def publish_to_kafka_topic(topic, message):
 def consume_from_kafka_topic(topic):
     consumer = KafkaConsumer(topic, bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS, group_id='kafka-streamer')
     return consumer
-
 
 def save_order_to_postgres(order):
     conn = create_connection()
@@ -68,37 +78,23 @@ def save_order_to_postgres(order):
     cursor.close()
     conn.close()
 
-
 def consume_and_send_emails():
     consumer = consume_from_kafka_topic(KAFKA_TOPIC)
 
     for message in consumer:
+        print(json.loads(message.value))
         order = eval(message.value.decode('utf-8'))
 
-        # Check if priority is high
+        # # Check if priority is high
         if order['priority'] == 'high':
             send_email(order)
+        # Save order to PostgreSQL
+        save_order_to_postgres(order)
 
-        # Write message to respective city topic
+        # # Write message to respective city topic
+        create_topic_if_not_exists(order['customer']['address']['city'])
         city_topic = order['customer']['address']['city']
         publish_to_kafka_topic(city_topic, message.value.decode('utf-8'))
-
-
-# Create Topic if not present
-def create_topic_if_not_exists(topic):
-    admin_client = KafkaAdminClient(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
-
-    topic_metadata = admin_client.list_topics()
-
-    if topic not in topic_metadata.topics:
-        topic = NewTopic(
-            name=topic,
-            num_partitions=3,
-            replication_factor=1
-        )
-
-        admin_client.create_topics([topic])
-
 
 
 # Dummy Home Endpoint
@@ -106,9 +102,24 @@ def create_topic_if_not_exists(topic):
 def hello():
     return "Hey there, welcome to the Kafka streamer!"
 
+@app.route("/kafka-data", methods=["GET"])
+def get_data():
+    try:
+        consumer = consume_from_kafka_topic(KAFKA_TOPIC)
+        print(consumer)
+        
+        # print(type(consumer()))
+        # orders = []
+        # for message in consumer:
+            # order = eval(message.value.decode('utf-8'))
+            # print(json.loads(message.value))
+        return "/kafka-data endpoint hit"
+    except Exception as e:
+        print(e)
+        return "Some shit went wrong with kafka consumer"
+
 # CREATE and READ Orders Endpoint
 @app.route("/orders", methods=["POST", "GET"])
-@cross_origin()
 def orders():
     if request.method == "GET":
         conn = create_connection()
@@ -145,9 +156,6 @@ def orders():
 
         # Publish order to Kafka topic
         publish_to_kafka_topic(KAFKA_TOPIC, str(order))
-
-        # Save order to PostgreSQL
-        save_order_to_postgres(order)
 
         return jsonify({'message': 'Order created successfully'}), 200
 

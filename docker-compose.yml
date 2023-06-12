@@ -1,21 +1,20 @@
 version: 'v1'
 services:
-  # flask:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - 5000:5000
-  #   depends_on:
-  #     - db
-  #     - kafka
-  #   environment:
-  #     - FLASK_APP=main.py
-  #     - FLASK_ENV=development
-  #     - POSTGRES_HOST=db
-  #     - POSTGRES_PORT=5432
-  #     - KAFKA_HOST=kafka
-  #     - KAFKA_PORT=9092
+  flask:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 5000:5000
+    depends_on:
+      - db
+      - kafka
+    environment:
+      - FLASK_APP=main.py
+      - FLASK_ENV=development
+      - POSTGRES_HOST=db
+      - KAFKA_HOST=kafka
+      - KAFKA_PORT=9092
 
   db:
     image: postgres
@@ -32,9 +31,6 @@ services:
       - '2181:2181'
     environment:
       - ALLOW_ANONYMOUS_LOGIN=yes
-    volumes:
-      - './zookeeper_data:/bitnami/zookeeper/data'
-      - './zookeeper_logs:/bitnami/zookeeper/logs'
 
   kafka:
     image: 'bitnami/kafka:latest'
@@ -44,6 +40,3 @@ services:
       - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
       - ALLOW_PLAINTEXT_LISTENER=yes
       - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
-    volumes:
-      - './kafka_data:/bitnami/kafka/data'
-      - './kafka_logs:/bitnami/kafka/logs'
