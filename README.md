@@ -36,7 +36,7 @@
 
 The overall goal of the assignment is to build a system that accepts product orders, stores them in a PostgreSQL database, forwards them to city-specific topics in Kafka, and sends an email to customers for high-priority orders.
 
-<img src="images/architecture_diagram.png" alt="Grafana Dashboard plotting metrics" />
+<img src="images/architecture_diagram.png" alt="Architecture diagram for this microservice" />
 
 ### 🛠️ Built With
 
