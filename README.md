@@ -135,21 +135,21 @@ kafka-console-producer.sh --topic "product_orders" --bootstrap-server localhost:
 
 ```json
 {
-  "order_id": 90123,
-  "customer": {
-    "name": "James Clark",
-    "email": "james@gmail.com",
-    "address": {
-      "street": "Avenue Street",
-      "city": "Illinois",
-      "state": "Chicago",
-      "postal_code": "768987"
-    }
-  },
-  "product_name": "Protein Powder",
-  "quantity": 5,
-  "order_date": "2023-06-09",
-  "priority": "high"
+	"order_id": 90123,
+	"customer": {
+		"name": "James Clark",
+		"email": "james@gmail.com",
+		"address": {
+			"street": "Avenue Street",
+			"city": "Illinois",
+			"state": "Chicago",
+			"postal_code": "768987"
+		}
+	},
+	"product_name": "Protein Powder",
+	"quantity": 5,
+	"order_date": "2023-06-09",
+	"priority": "high"
 }
 ```
 
@@ -165,3 +165,14 @@ kafka-console-producer.sh --topic "product_orders" --bootstrap-server localhost:
 - At last, the api will return a success message
 
 8. If we send a `GET` request to `/orders` endpoint, it will simply establish connection with the db and then get all the orders and send it in the form of a json.
+
+### 📉 Relevant Screenshots:
+
+1. _Sending a POST request to **/orders** via Postman_
+   <img src="images/screenshot1.png" alt="Postman Request" />
+
+2. _Logs of Docker Compose(Kafka, zookeeper and database) and Flask server_
+   <img src="images/screenshot2.png" alt="Docker Compose and Flask Logs" />
+
+3. _Exec into db and query the data added by consumer_
+   <img src="images/screenshot3.png" alt="Postgres DB" />
