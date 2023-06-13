@@ -24,25 +24,28 @@ def create_connection():
 def send_email(order):
     print(f"Email sent successfully to {order['customer']['email']}...")
 
-# Create Topic if not present
-def create_topic_if_not_exists(topic):
-    admin_client = KafkaAdminClient(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
+# Adding success callback
+def on_producer_send_success(record_metadata):
+    print('Message sent successfully!')
 
-    topic_metadata = admin_client.list_topics()
-
-    if topic not in topic_metadata.topics:
-        topic = NewTopic(
-            name=topic,
-            num_partitions=3,
-            replication_factor=1
-        )
-
-        admin_client.create_topics([topic])
+# Adding failure callback
+def on_producer_send_error(excp):
+    print('Failed to send message:', excp)
 
 def publish_to_kafka_topic(topic, message):
-    producer = KafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
-    producer.send(topic, value=message.encode('utf-8'))
+    producer = KafkaProducer(
+                bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                acks="all",
+                retries=0,
+                request_timeout_ms=2000,
+                batch_size=16384,
+                linger_ms=100
+            )
+    future = producer.send(topic, value=message)
     producer.flush()
+    future.add_callback(on_producer_send_success)
+    future.add_errback(on_producer_send_error)
     producer.close()
 
 def consume_from_kafka_topic(topic):
@@ -59,17 +62,17 @@ def save_order_to_postgres(order):
     """
 
     values = (
-        order['order_id'],
-        order['customer']['name'],
-        order['customer']['email'],
-        order['customer']['address']['street'],
-        order['customer']['address']['city'],
-        order['customer']['address']['state'],
-        order['customer']['address']['postal_code'],
-        order['product_name'],
-        order['quantity'],
-        order['order_date'],
-        order['priority']
+        order.get('order_id'),
+        order.get('customer').get('name'),
+        order.get('customer').get('email'),
+        order.get('customer').get('address').get('street'),
+        order.get('customer').get('address').get('city'),
+        order.get('customer').get('address').get('state'),
+        order.get('customer').get('address').get('postal_code'),
+        order.get('product_name'),
+        order.get('quantity'),
+        order.get('order_date'),
+        order.get('priority')
     )
 
     cursor.execute(query, values)
@@ -82,19 +85,20 @@ def consume_and_send_emails():
     consumer = consume_from_kafka_topic(KAFKA_TOPIC)
 
     for message in consumer:
-        print(json.loads(message.value))
+        # print("Message", message.value)
         order = eval(message.value.decode('utf-8'))
+        # print("Order", order.get('order_id'))
 
-        # # Check if priority is high
-        if order['priority'] == 'high':
+        # Check if priority is high
+        if order.get('priority') == 'high':
             send_email(order)
+        
         # Save order to PostgreSQL
         save_order_to_postgres(order)
 
-        # # Write message to respective city topic
-        create_topic_if_not_exists(order['customer']['address']['city'])
-        city_topic = order['customer']['address']['city']
-        publish_to_kafka_topic(city_topic, message.value.decode('utf-8'))
+        # Write message to respective city topic
+        city_topic = order.get('customer').get('address').get('city')
+        publish_to_kafka_topic(city_topic, order)
 
 
 # Dummy Home Endpoint
@@ -137,9 +141,20 @@ def orders():
     
     if request.method == "POST":
         order = request.get_json()
-
-        # Publish order to Kafka topic
-        publish_to_kafka_topic(KAFKA_TOPIC, str(order))
+        producer = KafkaProducer(
+            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+            value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+            acks="all",
+            retries=0,
+            request_timeout_ms=2000,
+            batch_size=16384,
+            linger_ms=100
+        )
+        future = producer.send(KAFKA_TOPIC, value=order)
+        producer.flush()
+        future.add_callback(on_producer_send_success)
+        future.add_errback(on_producer_send_error)
+        producer.close()
 
         return jsonify({'message': 'Order created successfully'}), 200
 
